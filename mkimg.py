@@ -3,6 +3,8 @@
 import argparse
 import subprocess
 import sys
+import os
+import rpm
 
 MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
 __version__ = '1'
@@ -33,12 +35,24 @@ def create_parser():
 
 def summary():
     '''
-    Calls the summary command in mkosi
+    Calls the summary command in mkosi.
+    Pre-pended with mkimg data
 
     :return:
     '''
     summary = subprocess.run(['mkosi', 'summary'])
     return summary
+
+
+def preflight_checks(verbose=False):
+    '''
+    This checks for existence of required binaries, filesystems, files, etc.
+    If verbose is true, preflight prints out mkosi-style summary data for mkimg
+    :return:
+    '''
+
+    _check_btrfs()
+    _check_rpms()
 
 def init(force=False):
     '''
@@ -54,23 +68,64 @@ def init(force=False):
     :return:
     '''
 
-def check_btrfs():
+
+def _check_btrfs():
     '''
     Check if cwd is on a btrfs filesystem.  Otherwise give error msg and quit.
     Run a variant of
     btrfs inspect-internal rootid .
     :return:
     '''
-    butter = subprocess.run(['btrfs', 'inspect-internal', 'rootid', '.'],
+    env = os.environ
+    butter = subprocess.run(['btrfs', 'inspect-internal', 'rootid', env['PWD']],
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             capture_output=False)
     if butter.returncode is 0:
-        sys.stderr.write('Local directory is in a subvol\n')
         return True
     else:
-        sys.stderr.write('Local directory is NOT in a btrfs subvol... Quiting.\n')
-        sys.exit(1)
+        return False
+
+
+def _check_rpms(rpms):
+    '''
+    print "%s-%s-%s" % (h['name'], h['version'], h['release'])
+
+    a = ['abc-123', 'def-456', 'ghi-789', 'abc-456']
+    for i in a:
+        if i.__contains__("abc") :
+            print(i, " is containing")
+
+
+    lst = ['abc-123', 'def-456', 'ghi-789', 'abc-456']
+    print filter(lambda x: 'abc' in x, lst)
+
+    :param rpm:
+    :return:
+    '''
+
+    rpmcheck = dict()
+    mylist = list()
+    myrpms = list()
+    ts = rpm.TransactionSet()
+    mi = ts.dbMatch()
+
+    for item in mi:
+        # grab all installed rpms and convert to str
+        mylist.append(item['name'].decode('utf-8')
+                      + '-' + item['version'].decode('utf-8')
+                      + '-' + item['release'].decode('utf-8')
+                      )
+
+    # Add the list of found packages
+    for p in rpms:
+        myrpms.append(list(filter(lambda x: p in x, mylist)))
+        rpmcheck.update(({
+                            'packages': myrpms,
+                            'status': True
+                        }))
+    print(rpmcheck)
+    return rpmcheck
 
 
 def paruse_args(argv=None):
@@ -82,8 +137,9 @@ def paruse_args(argv=None):
 def main():
     #TODO: Remove this shit when done testing
     #paruse_args()
-    check_btrfs()
-    summary()
+    #check_btrfs()
+    #summary()
+    _check_rpms(['btrfs', 'zstd'])
 
 
 if __name__ == "__main__":
