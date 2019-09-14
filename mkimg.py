@@ -4,7 +4,7 @@ import argparse
 import subprocess
 import sys
 import os
-import rpm
+import textwrap
 
 MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
 __version__ = '1'
@@ -51,13 +51,22 @@ def preflight_checks(verbose=False):
     :return:
     '''
 
-    _check_btrfs()
-    _check_rpms()
+    sys.stderr.write('PRE-FLIGHT CHECKLIST:\n')
+    if _check_btrfs():
+        sys.stderr.write('Current directory is a btrfs subvol: YES\n')
+    else:
+        sys.stderr.write('Current directory is a btrfs subvol: NO\n')
 
-def init(force=False):
+    for i in range(1,10):
+        sys.stderr.write('Checking test item ' + str(i) + ': YES\n')
+
+    #_check_binaries()
+
+
+def init(clean=False):
     '''
     This function conducts the pre-flight checks and generates the required project structure.
-    Passing "force=True" will override all current mkosi configs with defaults.
+    Passing "clean=True" will override all current mkosi configs with defaults.
 
     build/ (btrfs subvol)
     mkosi.default
@@ -65,8 +74,77 @@ def init(force=False):
     streams/
     buildroot/
 
+
+    try:
+        # Create target Directory
+        os.mkdir(dirName)
+        print("Directory " , dirName ,  " Created ")
+    except FileExistsError:
+        print("Directory " , dirName ,  " already exists")
+
     :return:
     '''
+
+    #check_root()
+
+    mydirs = ['streams', 'services', 'buildroot']
+    myfiles = ['mkosi.default', 'mkosi.rootpw']
+
+    if clean:
+        for file in myfiles:
+            os.remove(file)
+
+        for file in mydirs:
+            os.removedirs(file)
+
+        subprocess.run(['btrfs', 'subvol', 'delete', 'build'], stdout=subprocess.DEVNULL)
+
+    else:
+        preflight_checks()
+        sys.stderr.write('\nINITIALIZING PROJECT SPACE:\n')
+
+        try:
+            subprocess.run(['btrfs', 'subvol', 'create', 'build'], stdout=subprocess.DEVNULL)
+            sys.stderr.write('Created build subvolume\n')
+        except OSError:
+            sys.stderr.write('Failed to create build subvolume\n')
+
+        for directory in mydirs:
+            try:
+                os.mkdir(directory)
+                sys.stderr.write('Created ' + directory + ' directory \n')
+            except FileExistsError:
+                sys.stderr.write('Failed to create ' + directory + ': It already exists.\n')
+
+        mkrootpw = 'hello'
+        mkdefault = '''\
+                    [Distribution]
+                    Distribution=centos
+                    Release=7
+
+                    [Output]
+                    Format=directory
+                    OutputDirectory=buildroot
+
+                    [Packages]
+                    Packages=yum
+                             systemd
+                             yum-utils
+                             passwd
+                    '''
+
+        try:
+            with open('mkosi.default', 'w') as f:
+                f.write(textwrap.dedent(mkdefault))
+                f.close()
+            sys.stderr.write('Created mkosi.default file\n')
+
+            with open('mkosi.rootpw', 'w') as f:
+                f.write(mkrootpw)
+                f.close()
+            sys.stderr.write('Created mkosi.default file\n')
+        except OSError:
+            sys.stderr.write('Error in mkosi template file create')
 
 
 def _check_btrfs():
@@ -76,8 +154,8 @@ def _check_btrfs():
     btrfs inspect-internal rootid .
     :return:
     '''
-    env = os.environ
-    butter = subprocess.run(['btrfs', 'inspect-internal', 'rootid', env['PWD']],
+
+    butter = subprocess.run(['btrfs', 'inspect-internal', 'rootid', '.'],
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             capture_output=False)
@@ -87,7 +165,7 @@ def _check_btrfs():
         return False
 
 
-def _check_rpms(rpms):
+def _check_binaries():
     '''
 
     :param rpm:
@@ -120,16 +198,30 @@ def _check_rpms(rpms):
 
 def paruse_args(argv=None):
     parser = create_parser()
-    print('Call ' + parser.verb + ' action')
-    return parser.verb
 
+    if parser.verb == 'init':
+        init()
+    elif parser.verb == 'summary':
+        summary()
+    elif parser.verb == 'clean':
+        init(clean=True)
+    else:
+        return parser.verb
+
+
+def die(message):
+    sys.stderr.write(message + "\n")
+    sys.exit(1)
+
+
+def check_root():
+    if os.getuid() != 0:
+        die("Must be invoked as root.")
 
 def main():
     #TODO: Remove this shit when done testing
-    #paruse_args()
-    #check_btrfs()
-    #summary()
-    _check_rpms(['btrfs', 'zstd'])
+    paruse_args()
+
 
 
 if __name__ == "__main__":
