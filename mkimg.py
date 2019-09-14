@@ -89,16 +89,6 @@ def _check_btrfs():
 
 def _check_rpms(rpms):
     '''
-    print "%s-%s-%s" % (h['name'], h['version'], h['release'])
-
-    a = ['abc-123', 'def-456', 'ghi-789', 'abc-456']
-    for i in a:
-        if i.__contains__("abc") :
-            print(i, " is containing")
-
-
-    lst = ['abc-123', 'def-456', 'ghi-789', 'abc-456']
-    print filter(lambda x: 'abc' in x, lst)
 
     :param rpm:
     :return:
