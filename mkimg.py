@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import sys
 import os
+import stat
 import textwrap
 
 MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
@@ -85,10 +86,12 @@ def init(clean=False):
     :return:
     '''
 
-    #check_root()
+    check_root()
 
     mydirs = ['streams', 'services', 'buildroot']
     myfiles = ['mkosi.default', 'mkosi.rootpw']
+    sudo_uid = int(os.environ['SUDO_UID'])
+    sudo_gid = int(os.environ['SUDO_GID'])
 
     if clean:
         for file in myfiles:
@@ -105,6 +108,7 @@ def init(clean=False):
 
         try:
             subprocess.run(['btrfs', 'subvol', 'create', 'build'], stdout=subprocess.DEVNULL)
+            os.chown('build', sudo_uid, sudo_gid)
             sys.stderr.write('Created build subvolume\n')
         except OSError:
             sys.stderr.write('Failed to create build subvolume\n')
@@ -112,6 +116,7 @@ def init(clean=False):
         for directory in mydirs:
             try:
                 os.mkdir(directory)
+                os.chown(directory, sudo_uid, sudo_gid)
                 sys.stderr.write('Created ' + directory + ' directory \n')
             except FileExistsError:
                 sys.stderr.write('Failed to create ' + directory + ': It already exists.\n')
@@ -137,11 +142,14 @@ def init(clean=False):
             with open('mkosi.default', 'w') as f:
                 f.write(textwrap.dedent(mkdefault))
                 f.close()
+            os.chown('mkosi.default', sudo_uid, sudo_gid)
             sys.stderr.write('Created mkosi.default file\n')
 
             with open('mkosi.rootpw', 'w') as f:
                 f.write(mkrootpw)
                 f.close()
+            os.chmod('mkosi.rootpw', 0o600)
+            os.chown('mkosi.rootpw', sudo_uid, sudo_gid)
             sys.stderr.write('Created mkosi.default file\n')
         except OSError:
             sys.stderr.write('Error in mkosi template file create')
@@ -221,7 +229,6 @@ def check_root():
 def main():
     #TODO: Remove this shit when done testing
     paruse_args()
-
 
 
 if __name__ == "__main__":
