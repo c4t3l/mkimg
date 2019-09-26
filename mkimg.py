@@ -55,18 +55,26 @@ def preflight_checks(verbose=False):
     sys.stderr.write('PRE-FLIGHT CHECKLIST:\n')
     if _check_btrfs():
         sys.stderr.write('          Current directory is a btrfs subvol: YES\n')
-        go = True
+        checker = 0
     else:
         sys.stderr.write('          Current directory is a btrfs subvol: NO\n')
-        go = False
+        checker = 1
 
     bins = _check_binaries()
-    if bins:
-        for item in bins:
+    if bins[1]:
+        for item in bins[0]:
             sys.stderr.write(item)
-        go = True
 
+    else:
+        for item in bins[0]:
+            sys.stderr.write(item)
+        checker = 1
 
+    if checker != 0:
+        sys.stderr.write('\n          #########################################################\n')
+        sys.stderr.write('          Some preflight checks failed.  Please check dependencies.\n')
+        sys.stderr.write('          #########################################################\n')
+        sys.exit(1)
 
 
 
@@ -199,12 +207,23 @@ def _check_binaries():
 
     for _ in apps:
         posix = path / _
-        returns += '          Binary ' \
-                   + str(posix.resolve()) \
-                   + ' exists: ' \
-                   + str(posix.exists()).replace('True', 'YES') + '\n'
 
-    return returns
+        if posix.exists():
+            returns += '          Binary ' \
+                    + str(posix.resolve()) \
+                    + ' exists: ' \
+                    + 'YES\n'
+            status = True
+
+        else:
+            returns += '          Binary ' \
+                    + str(posix.resolve()) \
+                    + ' exists: ' \
+                    + 'NO\n'
+            status = False
+
+    return (returns, status)
+
 
 def paruse_args(argv=None):
     parser = create_parser()
@@ -231,6 +250,7 @@ def check_root():
 def main():
     #TODO: Remove this shit when done testing
     paruse_args()
+    #_check_binaries()
 
 
 if __name__ == "__main__":
