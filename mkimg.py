@@ -4,8 +4,8 @@ import argparse
 import subprocess
 import sys
 import os
-import stat
 import textwrap
+from pathlib import Path
 
 MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
 __version__ = '1'
@@ -54,14 +54,20 @@ def preflight_checks(verbose=False):
 
     sys.stderr.write('PRE-FLIGHT CHECKLIST:\n')
     if _check_btrfs():
-        sys.stderr.write('Current directory is a btrfs subvol: YES\n')
+        sys.stderr.write('          Current directory is a btrfs subvol: YES\n')
+        go = True
     else:
-        sys.stderr.write('Current directory is a btrfs subvol: NO\n')
+        sys.stderr.write('          Current directory is a btrfs subvol: NO\n')
+        go = False
 
-    for i in range(1,10):
-        sys.stderr.write('Checking test item ' + str(i) + ': YES\n')
+    bins = _check_binaries()
+    if bins:
+        for item in bins:
+            sys.stderr.write(item)
+        go = True
 
-    #_check_binaries()
+
+
 
 
 def init(clean=False):
@@ -82,6 +88,13 @@ def init(clean=False):
         print("Directory " , dirName ,  " Created ")
     except FileExistsError:
         print("Directory " , dirName ,  " already exists")
+
+
+    from pathlib import Path
+
+    for filename in Path('src').glob('**/*.c'):
+    print(filename)
+
 
     :return:
     '''
@@ -109,17 +122,17 @@ def init(clean=False):
         try:
             subprocess.run(['btrfs', 'subvol', 'create', 'build'], stdout=subprocess.DEVNULL)
             os.chown('build', sudo_uid, sudo_gid)
-            sys.stderr.write('Created build subvolume\n')
+            sys.stderr.write('          Created build subvolume\n')
         except OSError:
-            sys.stderr.write('Failed to create build subvolume\n')
+            sys.stderr.write('          Failed to create build subvolume\n')
 
         for directory in mydirs:
             try:
                 os.mkdir(directory)
                 os.chown(directory, sudo_uid, sudo_gid)
-                sys.stderr.write('Created ' + directory + ' directory \n')
+                sys.stderr.write('          Created ' + directory + ' directory \n')
             except FileExistsError:
-                sys.stderr.write('Failed to create ' + directory + ': It already exists.\n')
+                sys.stderr.write('          Failed to create ' + directory + ': It already exists.\n')
 
         mkrootpw = 'hello'
         mkdefault = '''\
@@ -143,16 +156,16 @@ def init(clean=False):
                 f.write(textwrap.dedent(mkdefault))
                 f.close()
             os.chown('mkosi.default', sudo_uid, sudo_gid)
-            sys.stderr.write('Created mkosi.default file\n')
+            sys.stderr.write('          Created mkosi.default file\n')
 
             with open('mkosi.rootpw', 'w') as f:
                 f.write(mkrootpw)
                 f.close()
             os.chmod('mkosi.rootpw', 0o600)
             os.chown('mkosi.rootpw', sudo_uid, sudo_gid)
-            sys.stderr.write('Created mkosi.default file\n')
+            sys.stderr.write('          Created mkosi.default file\n')
         except OSError:
-            sys.stderr.write('Error in mkosi template file create')
+            sys.stderr.write('          Error in mkosi template file create')
 
 
 def _check_btrfs():
@@ -180,29 +193,18 @@ def _check_binaries():
     :return:
     '''
 
-    rpmcheck = dict()
-    mylist = list()
-    myrpms = list()
-    ts = rpm.TransactionSet()
-    mi = ts.dbMatch()
+    apps = ['zstd', 'mkosi']
+    returns = list()
+    path = Path('/usr/bin')
 
-    for item in mi:
-        # grab all installed rpms and convert to str
-        mylist.append(item['name'].decode('utf-8')
-                      + '-' + item['version'].decode('utf-8')
-                      + '-' + item['release'].decode('utf-8')
-                      )
+    for _ in apps:
+        posix = path / _
+        returns += '          Binary ' \
+                   + str(posix.resolve()) \
+                   + ' exists: ' \
+                   + str(posix.exists()).replace('True', 'YES') + '\n'
 
-    # Add the list of found packages
-    for p in rpms:
-        myrpms.append(list(filter(lambda x: p in x, mylist)))
-        rpmcheck.update(({
-                            'packages': myrpms,
-                            'status': True
-                        }))
-    print(rpmcheck)
-    return rpmcheck
-
+    return returns
 
 def paruse_args(argv=None):
     parser = create_parser()
