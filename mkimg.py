@@ -71,10 +71,9 @@ def preflight_checks(verbose=False):
         checker = 1
 
     if checker != 0:
-        sys.stderr.write('\n          #########################################################\n')
-        sys.stderr.write('          Some preflight checks failed.  Please check dependencies.\n')
-        sys.stderr.write('          #########################################################\n')
-        sys.exit(1)
+        die('''\n          #########################################################
+          Some preflight checks failed.  Please check dependencies.
+          #########################################################''')
 
 
 
