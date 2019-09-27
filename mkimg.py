@@ -5,6 +5,7 @@ import subprocess
 import sys
 import os
 import textwrap
+import shutil
 from pathlib import Path
 
 MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
@@ -53,14 +54,14 @@ def preflight_checks(verbose=False):
     '''
 
     sys.stderr.write('PRE-FLIGHT CHECKLIST:\n')
-    if _check_btrfs():
+    if check_btrfs():
         sys.stderr.write('          Current directory is a btrfs subvol: YES\n')
         checker = 0
     else:
         sys.stderr.write('          Current directory is a btrfs subvol: NO\n')
         checker = 1
 
-    bins = _check_binaries()
+    bins = check_binaries()
     if bins[1]:
         for item in bins[0]:
             sys.stderr.write(item)
@@ -108,21 +109,28 @@ def init(clean=False):
 
     check_root()
 
+
     mydirs = ['streams', 'services', 'buildroot']
-    myfiles = ['mkosi.default', 'mkosi.rootpw']
+    myfiles = ['mkosi.default', 'mkosi.rootpw', '.init.lock']
     sudo_uid = int(os.environ['SUDO_UID'])
     sudo_gid = int(os.environ['SUDO_GID'])
 
     if clean:
-        for file in myfiles:
-            os.remove(file)
+        try:
+            for file in myfiles:
+                os.remove(file)
 
-        for file in mydirs:
-            os.removedirs(file)
+            for file in mydirs:
+                shutil.rmtree(file)
 
-        subprocess.run(['btrfs', 'subvol', 'delete', 'build'], stdout=subprocess.DEVNULL)
+            subprocess.run(['btrfs', 'subvol', 'delete', 'build'], stdout=subprocess.DEVNULL)
+
+        except FileNotFoundError:
+            sys.stderr.write('Removed files')
 
     else:
+        if check_init():
+            die('Workspace is already initialized. Operation halted.')
         preflight_checks()
         sys.stderr.write('\nINITIALIZING PROJECT SPACE:\n')
 
@@ -159,23 +167,30 @@ def init(clean=False):
                     '''
 
         try:
+            # create mkosi default config
             with open('mkosi.default', 'w') as f:
                 f.write(textwrap.dedent(mkdefault))
                 f.close()
             os.chown('mkosi.default', sudo_uid, sudo_gid)
             sys.stderr.write('          Created mkosi.default file\n')
 
+            # create mkosi rootpw file
             with open('mkosi.rootpw', 'w') as f:
                 f.write(mkrootpw)
                 f.close()
             os.chmod('mkosi.rootpw', 0o600)
             os.chown('mkosi.rootpw', sudo_uid, sudo_gid)
             sys.stderr.write('          Created mkosi.default file\n')
+
+            # Create init lock file
+            Path('.init.lock').touch()
+            os.chown('.init.lock', sudo_uid, sudo_gid)
+
         except OSError:
             sys.stderr.write('          Error in mkosi template file create')
 
 
-def _check_btrfs():
+def check_btrfs():
     '''
     Check if cwd is on a btrfs filesystem.  Otherwise give error msg and quit.
     Run a variant of
@@ -193,7 +208,7 @@ def _check_btrfs():
         return False
 
 
-def _check_binaries():
+def check_binaries():
     '''
 
     :param rpm:
@@ -222,6 +237,15 @@ def _check_binaries():
             status = False
 
     return (returns, status)
+
+
+def check_init():
+    # Check for init lock file
+    path = Path('.')
+    file = path / '.init.lock'
+
+    return file.exists()
+
 
 
 def paruse_args(argv=None):
