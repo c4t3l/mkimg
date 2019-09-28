@@ -42,16 +42,25 @@ def summary():
 
     :return:
     '''
+
     preflight_checks()
-    summary = subprocess.run(['mkosi', 'summary'])
-    return summary
+
+    if check_init():
+        sys.stderr.write('          Environment initialized: YES\n')
+    else:
+        sys.stderr.write('          Environment initialized: NO\n')
+
+    # spacer... (should probably do this another way...)
+    sys.stderr.write('\n')
+    summary_output = subprocess.run(['mkosi', 'summary'])
+
+    return summary_output
 
 
-def preflight_checks(verbose=False):
+def preflight_checks():
     '''
     This checks for existence of required binaries, filesystems, files, etc.
-    If verbose is true, preflight prints out mkosi-style summary data for mkimg
-    :return:
+    :return: str
     '''
 
     sys.stderr.write('PRE-FLIGHT CHECKLIST:\n')
@@ -66,6 +75,7 @@ def preflight_checks(verbose=False):
     if bins[1]:
         for item in bins[0]:
             sys.stderr.write(item)
+
 
     else:
         for item in bins[0]:
@@ -215,25 +225,28 @@ def check_binaries():
     :return:
     '''
 
-    apps = ['zstd', 'mkosi', 'sed', 'cp', 'btrfs', 'zwave2']
+    apps = ['zstd', 'mkosi', 'sed', 'cp', 'btrfs']
     returns = list()
 
     for _ in apps:
 
         try:
-            shutil.which(_)
-            returns += '          Binary ' \
-                    + str(shutil.which(_)) \
-                    + ' exists: ' \
-                    + 'YES\n'
-            status = True
+            if shutil.which(_) is not None:
+                returns += '          Binary ' \
+                        + str(shutil.which(_)) \
+                        + ' exists: ' \
+                        + 'YES\n'
+                status = True
+
+            else:
+                returns += '          Binary ' \
+                           + _ \
+                           + ' exists: ' \
+                           + 'NO\n'
+                status = False
 
         except shutil.Error:
-            returns += '          Binary ' \
-                    + str(shutil.which(_)) \
-                    + ' exists: ' \
-                    + 'NO\n'
-            status = False
+            die('Error in binary search')
 
     return (returns, status)
 
