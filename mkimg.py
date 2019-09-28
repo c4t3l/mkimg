@@ -12,6 +12,69 @@ MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
 __version__ = '1'
 
 
+def check_btrfs():
+    '''
+    Check if cwd is on a btrfs filesystem.  Otherwise give error msg and quit.
+    Run a variant of
+    btrfs inspect-internal rootid .
+    :return:
+    '''
+
+    butter = subprocess.run(['btrfs', 'inspect-internal', 'rootid', '.'],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            capture_output=False)
+    if butter.returncode is 0:
+        return True
+    else:
+        return False
+
+
+def check_binaries():
+    '''
+
+    :param rpm:
+    :return:
+    '''
+
+    apps = ['btrfs', 'mkosi', 'zstd', 'gzip']
+    returns = list()
+
+    for _ in apps:
+
+        try:
+            if shutil.which(_) is not None:
+                returns += '          Binary ' \
+                           + str(shutil.which(_)) \
+                           + ' exists: ' \
+                           + 'YES\n'
+                status = True
+
+            else:
+                returns += '          Binary ' \
+                           + _ \
+                           + ' exists: ' \
+                           + 'NO\n'
+                status = False
+
+        except shutil.Error:
+            die('Error in binary search')
+
+    return (returns, status)
+
+
+def check_init():
+    # Check for init lock file
+    path = Path('.')
+    file = path / '.init.lock'
+    return file.exists()
+
+
+def check_root():
+    if os.getuid() != 0:
+        die("Must be invoked as root.")
+
+
 def create_parser():
 
     parser = argparse.ArgumentParser(prog='mkimg',
@@ -35,26 +98,17 @@ def create_parser():
     return parser.parse_args()
 
 
-def summary():
-    '''
-    Calls the summary command in mkosi.
-    Pre-pended with mkimg data
+def paruse_args(argv=None):
+    parser = create_parser()
 
-    :return:
-    '''
-
-    preflight_checks()
-
-    if check_init():
-        sys.stderr.write('          Environment initialized: YES\n')
+    if parser.verb == 'init':
+        init()
+    elif parser.verb == 'summary':
+        summary()
+    elif parser.verb == 'clean':
+        init(clean=True)
     else:
-        sys.stderr.write('          Environment initialized: NO\n')
-
-    # spacer... (should probably do this another way...)
-    sys.stderr.write('\n')
-    summary_output = subprocess.run(['mkosi', 'summary'])
-
-    return summary_output
+        return parser.verb
 
 
 def preflight_checks():
@@ -133,7 +187,9 @@ def init(clean=False):
             for file in mydirs:
                 shutil.rmtree(file)
 
-            subprocess.run(['btrfs', 'subvol', 'delete', 'build'], stdout=subprocess.DEVNULL)
+            # Force remove btrfs subvolumes
+            shutil.rmtree('build')
+            #subprocess.run(['btrfs', 'subvol', 'delete', 'build'], stdout=subprocess.DEVNULL)
 
         except FileNotFoundError:
             die('No files found to remove')
@@ -200,85 +256,31 @@ def init(clean=False):
             die('Error in mkosi template file create')
 
 
-def check_btrfs():
+def summary():
     '''
-    Check if cwd is on a btrfs filesystem.  Otherwise give error msg and quit.
-    Run a variant of
-    btrfs inspect-internal rootid .
+    Calls the summary command in mkosi.
+    Pre-pended with mkimg data
+
     :return:
     '''
 
-    butter = subprocess.run(['btrfs', 'inspect-internal', 'rootid', '.'],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            capture_output=False)
-    if butter.returncode is 0:
-        return True
+    preflight_checks()
+
+    if check_init():
+        sys.stderr.write('          Environment initialized: YES\n')
     else:
-        return False
+        sys.stderr.write('          Environment initialized: NO\n')
 
+    # spacer... (should probably do this another way...)
+    sys.stderr.write('\n')
+    summary_output = subprocess.run(['mkosi', 'summary'])
 
-def check_binaries():
-    '''
-
-    :param rpm:
-    :return:
-    '''
-
-    apps = ['zstd', 'mkosi', 'sed', 'cp', 'btrfs']
-    returns = list()
-
-    for _ in apps:
-
-        try:
-            if shutil.which(_) is not None:
-                returns += '          Binary ' \
-                        + str(shutil.which(_)) \
-                        + ' exists: ' \
-                        + 'YES\n'
-                status = True
-
-            else:
-                returns += '          Binary ' \
-                           + _ \
-                           + ' exists: ' \
-                           + 'NO\n'
-                status = False
-
-        except shutil.Error:
-            die('Error in binary search')
-
-    return (returns, status)
-
-
-def check_init():
-    # Check for init lock file
-    path = Path('.')
-    file = path / '.init.lock'
-    return file.exists()
-
-
-def paruse_args(argv=None):
-    parser = create_parser()
-
-    if parser.verb == 'init':
-        init()
-    elif parser.verb == 'summary':
-        summary()
-    elif parser.verb == 'clean':
-        init(clean=True)
-    else:
-        return parser.verb
+    return summary_output
 
 
 def die(message):
     sys.stderr.write(message + "\n")
     sys.exit(1)
-
-
-def check_root():
-    if os.getuid() != 0:
-        die("Must be invoked as root.")
 
 
 def main():
