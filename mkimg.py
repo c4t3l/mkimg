@@ -42,6 +42,7 @@ def summary():
 
     :return:
     '''
+    preflight_checks()
     summary = subprocess.run(['mkosi', 'summary'])
     return summary
 
@@ -75,7 +76,6 @@ def preflight_checks(verbose=False):
         die('''\n          #########################################################
           Some preflight checks failed.  Please check dependencies.
           #########################################################''')
-
 
 
 def init(clean=False):
@@ -126,7 +126,7 @@ def init(clean=False):
             subprocess.run(['btrfs', 'subvol', 'delete', 'build'], stdout=subprocess.DEVNULL)
 
         except FileNotFoundError:
-            sys.stderr.write('Removed files')
+            die('No files found to remove')
 
     else:
         if check_init():
@@ -139,7 +139,7 @@ def init(clean=False):
             os.chown('build', sudo_uid, sudo_gid)
             sys.stderr.write('          Created build subvolume\n')
         except OSError:
-            sys.stderr.write('          Failed to create build subvolume\n')
+            die('Failed to create build subvolume')
 
         for directory in mydirs:
             try:
@@ -187,7 +187,7 @@ def init(clean=False):
             os.chown('.init.lock', sudo_uid, sudo_gid)
 
         except OSError:
-            sys.stderr.write('          Error in mkosi template file create')
+            die('Error in mkosi template file create')
 
 
 def check_btrfs():
@@ -215,23 +215,22 @@ def check_binaries():
     :return:
     '''
 
-    apps = ['zstd', 'mkosi']
+    apps = ['zstd', 'mkosi', 'sed', 'cp', 'btrfs', 'zwave2']
     returns = list()
-    path = Path('/usr/bin')
 
     for _ in apps:
-        posix = path / _
 
-        if posix.exists():
+        try:
+            shutil.which(_)
             returns += '          Binary ' \
-                    + str(posix.resolve()) \
+                    + str(shutil.which(_)) \
                     + ' exists: ' \
                     + 'YES\n'
             status = True
 
-        else:
+        except shutil.Error:
             returns += '          Binary ' \
-                    + str(posix.resolve()) \
+                    + str(shutil.which(_)) \
                     + ' exists: ' \
                     + 'NO\n'
             status = False
@@ -243,9 +242,7 @@ def check_init():
     # Check for init lock file
     path = Path('.')
     file = path / '.init.lock'
-
     return file.exists()
-
 
 
 def paruse_args(argv=None):
@@ -270,10 +267,10 @@ def check_root():
     if os.getuid() != 0:
         die("Must be invoked as root.")
 
+
 def main():
     #TODO: Remove this shit when done testing
     paruse_args()
-    #_check_binaries()
 
 
 if __name__ == "__main__":
