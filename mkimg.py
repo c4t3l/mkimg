@@ -6,6 +6,7 @@ import sys
 import os
 import textwrap
 import shutil
+import tarfile
 from pathlib import Path
 
 MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
@@ -105,6 +106,8 @@ def paruse_args(argv=None):
         init()
     elif parser.verb == 'summary':
         summary()
+    elif parser.verb == 'build':
+        build()
     elif parser.verb == 'clean':
         init(clean=True)
     else:
@@ -161,18 +164,10 @@ def init(clean=False):
     except FileExistsError:
         print("Directory " , dirName ,  " already exists")
 
-
-    from pathlib import Path
-
-    for filename in Path('src').glob('**/*.c'):
-    print(filename)
-
-
     :return:
     '''
 
     check_root()
-
 
     mydirs = ['streams', 'services', 'buildroot']
     myfiles = ['mkosi.default', 'mkosi.rootpw', '.init.lock']
@@ -189,7 +184,6 @@ def init(clean=False):
 
             # Force remove btrfs subvolumes
             shutil.rmtree('build')
-            #subprocess.run(['btrfs', 'subvol', 'delete', 'build'], stdout=subprocess.DEVNULL)
 
         except FileNotFoundError:
             die('No files found to remove')
@@ -201,7 +195,7 @@ def init(clean=False):
         sys.stderr.write('\nINITIALIZING PROJECT SPACE:\n')
 
         try:
-            subprocess.run(['btrfs', 'subvol', 'create', 'build'], stdout=subprocess.DEVNULL)
+            btrfs_do('build')
             os.chown('build', sudo_uid, sudo_gid)
             sys.stderr.write('          Created build subvolume\n')
         except OSError:
@@ -276,6 +270,47 @@ def summary():
     summary_output = subprocess.run(['mkosi', 'summary'])
 
     return summary_output
+
+
+def btrfs_do(volume, command='subvol', action='create'):
+    '''
+    BTRFS utility function
+
+    :param volume:
+    :param command:
+    :param action:
+    :return:
+    '''
+
+    try:
+        butter = subprocess.run(['btrfs', command, action, volume], stdout=subprocess.DEVNULL)
+
+    except OSError:
+        die('Error handling BTRFS object.')
+
+    return butter
+
+
+def build():
+    # This function is still in a non-working state...
+    '''
+    Generate build id
+    Kick off mkosi
+    Create subvol in build
+    Copy contents from buildroot to build subvol
+    Set build/subvol to read only
+    Compress build/subvol to sendtream file with zstd
+
+    :return:
+    '''
+    #subprocess.run('mkosi', subprocess.DEVNULL)
+
+    # generate subvol from hash of install image
+    mytar = tarfile.open('buildroot/tmp.tar', 'w')
+    #for file in os.walk('buildroot/image'):
+    mytar.addfile('buildroot')
+    mytar.close()
+    #btrfs_do('build/' + uuid)
 
 
 def die(message):
