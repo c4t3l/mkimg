@@ -7,7 +7,9 @@ import os
 import textwrap
 import shutil
 import tarfile
+import secrets
 from pathlib import Path
+from distutils.dir_util import copy_tree
 
 MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
 __version__ = '1'
@@ -281,7 +283,6 @@ def btrfs_do(volume, command='subvol', action='create'):
     :param action:
     :return:
     '''
-
     try:
         butter = subprocess.run(['btrfs', command, action, volume], stdout=subprocess.DEVNULL)
 
@@ -299,24 +300,34 @@ def build():
     Create subvol in build
     Copy contents from buildroot to build subvol
     Set build/subvol to read only
-    Compress build/subvol to sendtream file with zstd
+    Compress build/subvol to sendstream file with zstd
 
     :return:
     '''
-    #subprocess.run('mkosi', subprocess.DEVNULL)
 
-    # generate subvol from hash of install image
-    mytar = tarfile.open('buildroot/tmp.tar', 'w')
-    #for file in os.walk('buildroot/image'):
-    mytar.addfile('buildroot')
-    mytar.close()
-    #btrfs_do('build/' + uuid)
+    mycid = gen_cid()
+    myvolume = 'build/' + mycid
+    mybuildroot = 'buildroot/image/'
+    btrfs_do(myvolume)
+    subprocess.run('mkosi', subprocess.DEVNULL)
 
+    sys.stderr.write('Preparing image...\n')
+    copy_tree(mybuildroot, myvolume, preserve_symlinks=1, update=1)
 
 def die(message):
     sys.stderr.write(message + "\n")
     sys.exit(1)
 
+
+def gen_cid():
+    '''
+    We generate a 16 character string for the container-id
+    This is the maximum length that nspawn allows
+
+    :return:
+    '''
+
+    return secrets.token_hex(8)
 
 def main():
     #TODO: Remove this shit when done testing
