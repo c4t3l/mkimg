@@ -305,14 +305,26 @@ def build():
     :return:
     '''
 
+    if not check_init():
+        die('Workspace is not initialized. Operation halted.')
+
+    check_root()
     mycid = gen_cid()
     myvolume = 'build/' + mycid
     mybuildroot = 'buildroot/image/'
+    myosrelease = mybuildroot + '/etc/os-release'
     btrfs_do(myvolume)
     subprocess.run('mkosi', subprocess.DEVNULL)
 
     sys.stderr.write('Preparing image...\n')
+
+    # Add container id to /etc/os-release
+    with open(myosrelease, 'a') as f:
+        f.write('BUILD_ID="' + mycid + '"\n')
+
     copy_tree(mybuildroot, myvolume, preserve_symlinks=1, update=1)
+    shutil.rmtree('buildroot/image')
+
 
 def die(message):
     sys.stderr.write(message + "\n")
@@ -327,7 +339,9 @@ def gen_cid():
     :return:
     '''
 
-    return secrets.token_hex(8)
+
+    return secrets.token_hex(16)
+
 
 def main():
     #TODO: Remove this shit when done testing
