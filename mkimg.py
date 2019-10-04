@@ -6,7 +6,6 @@ import sys
 import os
 import textwrap
 import shutil
-import tarfile
 import secrets
 from pathlib import Path
 from distutils.dir_util import copy_tree
@@ -274,7 +273,7 @@ def summary():
     return summary_output
 
 
-def btrfs_do(volume, command='subvol', action='create'):
+def btrfs_do(volume, command='subvol', action='create', *args):
     '''
     BTRFS utility function
 
@@ -284,12 +283,30 @@ def btrfs_do(volume, command='subvol', action='create'):
     :return:
     '''
     try:
-        butter = subprocess.run(['btrfs', command, action, volume], stdout=subprocess.DEVNULL)
+        butter = subprocess.run(['btrfs', command, action, volume, *args], stdout=subprocess.DEVNULL)
 
     except OSError:
         die('Error handling BTRFS object.')
 
     return butter
+
+
+def compress_subvol(subvol, dest):
+    '''
+    This compresses the subvol into a zstd sendstreamm at dest
+
+    :param subvol:
+    :return:
+    '''
+
+    arg1 = [btrfs_do(subvol, 'send', '')]
+    arg2 = ['zstd', '-v']
+
+    # Trying this over the insecure shell=True method
+    with open(dest, 'b+') as myfile:
+        proc_send = subprocess.Popen(arg1, stdout=subprocess.PIPE, shell=False)
+        proc_stream = subprocess.Popen(arg2, stdin=proc_send.stdout, stdout=myfile, shell=False)
+        proc_send.stdout.close()
 
 
 def build():
@@ -313,6 +330,7 @@ def build():
     myvolume = 'build/' + mycid
     mybuildroot = 'buildroot/image/'
     myosrelease = mybuildroot + '/etc/os-release'
+    mysendstream = 'streams/' + mycid + '.sendstream.zst'
     btrfs_do(myvolume)
     subprocess.run('mkosi', subprocess.DEVNULL)
 
@@ -322,8 +340,16 @@ def build():
     with open(myosrelease, 'a') as f:
         f.write('BUILD_ID="' + mycid + '"\n')
 
+    sys.stderr.write('Copying buildroot...\n')
     copy_tree(mybuildroot, myvolume, preserve_symlinks=1, update=1)
     shutil.rmtree('buildroot/image')
+
+    # Set subvolume to read-only mode for transport
+    sys.stderr.write('Preparing subvol for transport...\n')
+    btrfs_do(myvolume, 'property', 'set', 'ro', 'true')
+
+    compress_subvol(myvolume, mysendstream)
+
 
 
 def die(message):
@@ -333,8 +359,8 @@ def die(message):
 
 def gen_cid():
     '''
-    We generate a 16 character string for the container-id
-    This is the maximum length that nspawn allows
+    We generate a 32 character string for the container-id.
+    This id is also added to os-release as BUILD_ID
 
     :return:
     '''
