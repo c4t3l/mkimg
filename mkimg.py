@@ -7,6 +7,7 @@ import os
 import textwrap
 import shutil
 import secrets
+import time
 from pathlib import Path
 from distutils.dir_util import copy_tree
 
@@ -320,13 +321,29 @@ def compress_subvol(subvol, dest):
                                        stdin=proc_send.stdout, stdout=subprocess.PIPE, shell=False
                                        )
         proc_send.stdout.close()
-        proc_stream.stdout.close()
+        proc_stream.communicate()[0]
         set_ownership(dest)
     except OSError as e:
         print(str(e))
         die('Error in subvolume compress')
 
 
+def timeit(method):
+    def timed(*args, **kw):
+        tstart = time.time()
+        result = method(*args, **kw)
+        telapsed = time.time()
+        if 'log_time' in kw:
+            name = kw.get('log_name', method.__name__.upper())
+            kw['log_time'][name] = int((te - ts) * 1000)
+        else:
+            sys.stderr.write(f'Build time: {((telapsed - tstart) * 1000)} ms\n')
+        return result
+
+    return timed
+
+
+@timeit
 def build():
     # This function is still in a non-working state...
     '''
@@ -367,7 +384,9 @@ def build():
     btrfs_do(myvolume, 'property', 'set', 'ro', 'true')
 
     compress_subvol(myvolume, mysendstream)
-    sys.stderr.write('Build complete!!')
+    sys.stderr.write('Image build complete!!\n')
+
+
 
 
 def die(message):
