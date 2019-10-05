@@ -115,6 +115,19 @@ def paruse_args(argv=None):
         return parser.verb
 
 
+def set_ownership(path):
+    '''
+    Fix ownership after sudo calls...
+
+    :param path:
+    :return:
+    '''
+    sudo_uid = int(os.environ['SUDO_UID'])
+    sudo_gid = int(os.environ['SUDO_GID'])
+
+    return os.chown(path, sudo_uid, sudo_gid)
+
+
 def preflight_checks():
     '''
     This checks for existence of required binaries, filesystems, files, etc.
@@ -172,8 +185,6 @@ def init(clean=False):
 
     mydirs = ['streams', 'services', 'buildroot']
     myfiles = ['mkosi.default', 'mkosi.rootpw', '.init.lock']
-    sudo_uid = int(os.environ['SUDO_UID'])
-    sudo_gid = int(os.environ['SUDO_GID'])
 
     if clean:
         try:
@@ -184,7 +195,8 @@ def init(clean=False):
                 shutil.rmtree(file)
 
             # Force remove btrfs subvolumes
-            shutil.rmtree('build')
+            btrfs_do('build', action='delete')
+            #shutil.rmtree('build')
 
         except FileNotFoundError:
             die('No files found to remove')
@@ -197,7 +209,7 @@ def init(clean=False):
 
         try:
             btrfs_do('build')
-            os.chown('build', sudo_uid, sudo_gid)
+            set_ownership('build')
             sys.stderr.write('          Created build subvolume\n')
         except OSError:
             die('Failed to create build subvolume')
@@ -205,7 +217,7 @@ def init(clean=False):
         for directory in mydirs:
             try:
                 os.mkdir(directory)
-                os.chown(directory, sudo_uid, sudo_gid)
+                set_ownership(directory)
                 sys.stderr.write('          Created ' + directory + ' directory \n')
             except FileExistsError:
                 sys.stderr.write('          Failed to create ' + directory + ': It already exists.\n')
@@ -232,7 +244,7 @@ def init(clean=False):
             with open('mkosi.default', 'w') as f:
                 f.write(textwrap.dedent(mkdefault))
                 f.close()
-            os.chown('mkosi.default', sudo_uid, sudo_gid)
+            set_ownership('mkosi.default')
             sys.stderr.write('          Created mkosi.default file\n')
 
             # create mkosi rootpw file
@@ -240,12 +252,12 @@ def init(clean=False):
                 f.write(mkrootpw)
                 f.close()
             os.chmod('mkosi.rootpw', 0o600)
-            os.chown('mkosi.rootpw', sudo_uid, sudo_gid)
+            set_ownership('mkosi.rootpw')
             sys.stderr.write('          Created mkosi.default file\n')
 
             # Create init lock file
             Path('.init.lock').touch()
-            os.chown('.init.lock', sudo_uid, sudo_gid)
+            set_ownership('.init.lock')
 
         except OSError:
             die('Error in mkosi template file create')
@@ -296,17 +308,23 @@ def compress_subvol(subvol, dest):
     This compresses the subvol into a zstd sendstreamm at dest
 
     :param subvol:
-    :return:
+    :return None:
+
     '''
 
-    arg1 = [btrfs_do(subvol, 'send', '')]
-    arg2 = ['zstd', '-v']
-
-    # Trying this over the insecure shell=True method
-    with open(dest, 'b+') as myfile:
-        proc_send = subprocess.Popen(arg1, stdout=subprocess.PIPE, shell=False)
-        proc_stream = subprocess.Popen(arg2, stdin=proc_send.stdout, stdout=myfile, shell=False)
+    try:
+        proc_send = subprocess.Popen(['btrfs', 'send', subvol],
+                                     stdout=subprocess.PIPE, shell=False
+                                     )
+        proc_stream = subprocess.Popen(['zstd', '-v', '-o', dest],
+                                       stdin=proc_send.stdout, stdout=subprocess.PIPE, shell=False
+                                       )
         proc_send.stdout.close()
+        proc_stream.stdout.close()
+        set_ownership(dest)
+    except OSError as e:
+        print(str(e))
+        die('Error in subvolume compress')
 
 
 def build():
@@ -349,7 +367,7 @@ def build():
     btrfs_do(myvolume, 'property', 'set', 'ro', 'true')
 
     compress_subvol(myvolume, mysendstream)
-
+    sys.stderr.write('Build complete!!')
 
 
 def die(message):
@@ -364,7 +382,6 @@ def gen_cid():
 
     :return:
     '''
-
 
     return secrets.token_hex(16)
 
