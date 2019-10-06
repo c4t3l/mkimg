@@ -111,7 +111,7 @@ def paruse_args(argv=None):
     elif parser.verb == 'build':
         build()
     elif parser.verb == 'clean':
-        init(clean=True)
+        clean()
     else:
         return parser.verb
 
@@ -160,24 +160,37 @@ def preflight_checks():
           #########################################################''')
 
 
-def init(clean=False):
+def clean():
+    '''
+    Remove working files.  This funciton mirrors mkosi clean..
+
+    :return:
+    '''
+
+    mysubvols = os.listdir('build')
+
+    try:
+        # Force remove btrfs subvolumes
+        if len(mysubvols) == 0:
+            sys.stderr.write('No volumes found for removal.\n')
+        else:
+            for volume in mysubvols:
+                btrfs_do('build/' + volume, action='delete')
+                sys.stderr.write(f'Removing output volume {volume}.\n')
+
+    except FileNotFoundError as e:
+        die('No files found to remove')
+
+
+def init():
     '''
     This function conducts the pre-flight checks and generates the required project structure.
-    Passing "clean=True" will override all current mkosi configs with defaults.
 
     build/ (btrfs subvol)
     mkosi.default
     mkosi.rootpw
     streams/
     buildroot/
-
-
-    try:
-        # Create target Directory
-        os.mkdir(dirName)
-        print("Directory " , dirName ,  " Created ")
-    except FileExistsError:
-        print("Directory " , dirName ,  " already exists")
 
     :return:
     '''
@@ -187,81 +200,65 @@ def init(clean=False):
     mydirs = ['streams', 'services', 'buildroot']
     myfiles = ['mkosi.default', 'mkosi.rootpw', '.init.lock']
 
-    if clean:
+    if check_init():
+        die('Workspace is already initialized. Operation halted.')
+    preflight_checks()
+    sys.stderr.write('\nINITIALIZING PROJECT SPACE:\n')
+
+    try:
+        btrfs_do('build')
+        set_ownership('build')
+        sys.stderr.write('          Created build subvolume\n')
+    except OSError:
+        die('Failed to create build subvolume')
+
+    for directory in mydirs:
         try:
-            for file in myfiles:
-                os.remove(file)
+            os.mkdir(directory)
+            set_ownership(directory)
+            sys.stderr.write('          Created ' + directory + ' directory \n')
+        except FileExistsError:
+            sys.stderr.write('          Failed to create ' + directory + ': It already exists.\n')
 
-            for file in mydirs:
-                shutil.rmtree(file)
+    mkrootpw = 'hello'
+    mkdefault = '''\
+                [Distribution]
+                Distribution=centos
+                Release=7
 
-            # Force remove btrfs subvolumes
-            btrfs_do('build', action='delete')
-            #shutil.rmtree('build')
+                [Output]
+                Format=directory
+                OutputDirectory=buildroot
 
-        except FileNotFoundError:
-            die('No files found to remove')
+                [Packages]
+                Packages=yum
+                         systemd
+                         yum-utils
+                         passwd
+                '''
 
-    else:
-        if check_init():
-            die('Workspace is already initialized. Operation halted.')
-        preflight_checks()
-        sys.stderr.write('\nINITIALIZING PROJECT SPACE:\n')
+    try:
+        # create mkosi default config
+        with open('mkosi.default', 'w') as f:
+            f.write(textwrap.dedent(mkdefault))
+            f.close()
+        set_ownership('mkosi.default')
+        sys.stderr.write('          Created mkosi.default file\n')
 
-        try:
-            btrfs_do('build')
-            set_ownership('build')
-            sys.stderr.write('          Created build subvolume\n')
-        except OSError:
-            die('Failed to create build subvolume')
+        # create mkosi rootpw file
+        with open('mkosi.rootpw', 'w') as f:
+            f.write(mkrootpw)
+            f.close()
+        os.chmod('mkosi.rootpw', 0o600)
+        set_ownership('mkosi.rootpw')
+        sys.stderr.write('          Created mkosi.default file\n')
 
-        for directory in mydirs:
-            try:
-                os.mkdir(directory)
-                set_ownership(directory)
-                sys.stderr.write('          Created ' + directory + ' directory \n')
-            except FileExistsError:
-                sys.stderr.write('          Failed to create ' + directory + ': It already exists.\n')
+        # Create init lock file
+        Path('.init.lock').touch()
+        set_ownership('.init.lock')
 
-        mkrootpw = 'hello'
-        mkdefault = '''\
-                    [Distribution]
-                    Distribution=centos
-                    Release=7
-
-                    [Output]
-                    Format=directory
-                    OutputDirectory=buildroot
-
-                    [Packages]
-                    Packages=yum
-                             systemd
-                             yum-utils
-                             passwd
-                    '''
-
-        try:
-            # create mkosi default config
-            with open('mkosi.default', 'w') as f:
-                f.write(textwrap.dedent(mkdefault))
-                f.close()
-            set_ownership('mkosi.default')
-            sys.stderr.write('          Created mkosi.default file\n')
-
-            # create mkosi rootpw file
-            with open('mkosi.rootpw', 'w') as f:
-                f.write(mkrootpw)
-                f.close()
-            os.chmod('mkosi.rootpw', 0o600)
-            set_ownership('mkosi.rootpw')
-            sys.stderr.write('          Created mkosi.default file\n')
-
-            # Create init lock file
-            Path('.init.lock').touch()
-            set_ownership('.init.lock')
-
-        except OSError:
-            die('Error in mkosi template file create')
+    except OSError:
+        die('Error in mkosi template file create')
 
 
 def summary():
@@ -337,7 +334,7 @@ def timeit(method):
             name = kw.get('log_name', method.__name__.upper())
             kw['log_time'][name] = int((te - ts) * 1000)
         else:
-            sys.stderr.write(f'Build time: {((telapsed - tstart) * 1000)} ms\n')
+            sys.stderr.write(f'Build time: {(((telapsed - tstart) * 1000) / 1000)} s\n')
         return result
 
     return timed
@@ -406,7 +403,6 @@ def gen_cid():
 
 
 def main():
-    #TODO: Remove this shit when done testing
     paruse_args()
 
 
