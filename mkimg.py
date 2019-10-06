@@ -11,8 +11,8 @@ import time
 from pathlib import Path
 from distutils.dir_util import copy_tree
 
-MKIMG_COMMANDS = ('init', 'build', 'clean', 'summary')
-__version__ = '1'
+MKIMG_COMMANDS = ('init', 'build', 'clean', 'destroy', 'summary', 'compose')
+__version__ = '2019.1'
 
 
 def check_btrfs():
@@ -112,6 +112,8 @@ def paruse_args(argv=None):
         build()
     elif parser.verb == 'clean':
         clean()
+    elif parser.verb == 'destroy':
+        clean(destroy=True)
     else:
         return parser.verb
 
@@ -160,26 +162,50 @@ def preflight_checks():
           #########################################################''')
 
 
-def clean():
+def clean(destroy=False):
     '''
     Remove working files.  This funciton mirrors mkosi clean..
 
     :return:
     '''
 
-    mysubvols = os.listdir('build')
-
     try:
-        # Force remove btrfs subvolumes
-        if len(mysubvols) == 0:
-            sys.stderr.write('No volumes found for removal.\n')
-        else:
+        check_root()
+        mysubvols = os.listdir('build')
+        mydirs = ['streams', 'services', 'buildroot']
+        myfiles = ['mkosi.default', 'mkosi.rootpw', '.init.lock']
+
+    except FileNotFoundError:
+        die('No files found to remove')
+
+    if destroy:
+        try:
+            for file in myfiles:
+                os.remove(file)
+
+            for directory in mydirs:
+                shutil.rmtree(directory)
+
+            # Force remove btrfs subvolumes
             for volume in mysubvols:
                 btrfs_do('build/' + volume, action='delete')
-                sys.stderr.write(f'Removing output volume {volume}.\n')
+            shutil.rmtree('build')
 
-    except FileNotFoundError as e:
-        die('No files found to remove')
+        except FileNotFoundError:
+            die('No files found to remove')
+
+    else:
+        try:
+            # Force remove btrfs subvolumes
+            if len(mysubvols) == 0:
+                sys.stderr.write('No volumes found for removal.\n')
+            else:
+                for volume in mysubvols:
+                    btrfs_do('build/' + volume, action='delete')
+                    sys.stderr.write(f'Removing output volume {volume}.\n')
+
+        except FileNotFoundError:
+            die('No files found to remove')
 
 
 def init():
@@ -384,7 +410,14 @@ def build():
     sys.stderr.write('Image build complete!!\n')
 
 
+def compose():
+    '''
+    Create sendstream diffs from a parent subvol.
 
+
+    :return:
+    '''
+    pass
 
 def die(message):
     sys.stderr.write(message + "\n")
