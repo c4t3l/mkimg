@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from distutils.dir_util import copy_tree
 
-MKIMG_COMMANDS = ('init', 'build', 'clean', 'destroy', 'summary', 'compose')
+MKIMG_COMMANDS = ('init', 'info', 'build', 'clean', 'destroy', 'summary', 'compose')
 __version__ = '2019.1'
 
 
@@ -114,6 +114,8 @@ def paruse_args(argv=None):
         clean()
     elif parser.verb == 'destroy':
         clean(destroy=True)
+    elif parser.verb == 'info':
+        info()
     else:
         return parser.verb
 
@@ -285,6 +287,18 @@ def init():
 
     except OSError:
         die('Error in mkosi template file create')
+
+
+def info():
+    mydirs = ['build', 'streams', 'services']
+    preflight_checks()
+
+    sys.stderr.write('DIRECTORY LISTING:\n')
+    for directory in mydirs:
+        mydir = os.listdir(directory)
+        for item in mydir:
+            sys.stderr.write('          ' + directory + '/' + item + '\n')
+
 
 
 def summary():
