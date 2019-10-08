@@ -8,6 +8,7 @@ import textwrap
 import shutil
 import secrets
 import time
+import fileinput
 from pathlib import Path
 from distutils.dir_util import copy_tree
 
@@ -116,6 +117,8 @@ def paruse_args(argv=None):
         clean(destroy=True)
     elif parser.verb == 'info':
         info()
+    elif parser.verb == 'compose':
+        compose()
     else:
         return parser.verb
 
@@ -217,6 +220,7 @@ def init():
     build/ (btrfs subvol)
     mkosi.default
     mkosi.rootpw
+    mkosi.cache/
     streams/
     buildroot/
 
@@ -225,7 +229,7 @@ def init():
 
     check_root()
 
-    mydirs = ['streams', 'services', 'buildroot']
+    mydirs = ['streams', 'services', 'buildroot', 'mkosi.cache']
     myfiles = ['mkosi.default', 'mkosi.rootpw', '.init.lock']
 
     if check_init():
@@ -293,12 +297,11 @@ def info():
     mydirs = ['build', 'streams', 'services']
     preflight_checks()
 
-    sys.stderr.write('DIRECTORY LISTING:\n')
+    sys.stderr.write('PROJECT LISTING:\n')
     for directory in mydirs:
         mydir = os.listdir(directory)
         for item in mydir:
             sys.stderr.write('          ' + directory + '/' + item + '\n')
-
 
 
 def summary():
@@ -335,7 +338,8 @@ def btrfs_do(volume, command='subvol', action='create', *args):
     try:
         butter = subprocess.run(['btrfs', command, action, volume, *args], stdout=subprocess.DEVNULL)
 
-    except OSError:
+    except OSError as e:
+        print(str(e))
         die('Error handling BTRFS object.')
 
     return butter
@@ -424,14 +428,39 @@ def build():
     sys.stderr.write('Image build complete!!\n')
 
 
+@timeit
 def compose():
     '''
     Create sendstream diffs from a parent subvol.
 
+    Generate snapshot ID
+    Snapshot from parent
+    Add PARENT_BUILD_ID and PARENT_ID to /etc/os-release
+    Do work on snapshot vol
+    Set snapshot to read-only
+    Send btrfs parent/child diff to .zst file
 
     :return:
     '''
-    pass
+    try:
+        parent_volume = 'build/a3afa5d98d6507fb831e94e91a935077'
+        mycid = gen_cid()
+        myvolume = 'build/' + mycid
+        myosrelease = myvolume + '/etc/os-release'
+        btrfs_do(parent_volume, 'subvolume', 'snapshot', myvolume)
+
+        # Add container id to /etc/os-release
+        # This needs to be its own func
+
+        for line in fileinput.input([myosrelease], inplace=True):
+            print(line.replace('BUILD_ID', 'PARENT_BUILD_ID'), end='')
+
+        with open(myosrelease, 'a') as f:
+            f.write('BUILD_ID="' + mycid + '"\n')
+
+    except OSError as e:
+        print(str(e))
+
 
 def die(message):
     sys.stderr.write(message + "\n")
