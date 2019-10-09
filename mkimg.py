@@ -411,13 +411,9 @@ def build():
     subprocess.run('mkosi', subprocess.DEVNULL)
 
     sys.stderr.write('Preparing image...\n')
-
-    # Add container id to /etc/os-release
-    with open(myosrelease, 'a') as f:
-        f.write('BUILD_ID="' + mycid + '"\n')
-
     sys.stderr.write('Copying buildroot...\n')
     copy_tree(mybuildroot, myvolume, preserve_symlinks=1, update=1)
+    osrelease(mycid)
     shutil.rmtree('buildroot/image')
 
     # Set subvolume to read-only mode for transport
@@ -443,23 +439,49 @@ def compose():
     :return:
     '''
     try:
-        parent_volume = 'build/a3afa5d98d6507fb831e94e91a935077'
+        prefix = 'build/'
+        parent_id = '57136fb8e1c02d0da9ae2b441ec4aa80'
+        parent_volume = prefix + parent_id
         mycid = gen_cid()
-        myvolume = 'build/' + mycid
-        myosrelease = myvolume + '/etc/os-release'
+        myvolume = prefix + mycid
+
+        # Generate snapshot from parent
         btrfs_do(parent_volume, 'subvolume', 'snapshot', myvolume)
 
-        # Add container id to /etc/os-release
-        # This needs to be its own func
+        # Update the os-release file to reflect the new container ids
+        osrelease(mycid, update=True)
+        osrelease(mycid)
 
-        for line in fileinput.input([myosrelease], inplace=True):
-            print(line.replace('BUILD_ID', 'PARENT_BUILD_ID'), end='')
+        # TODO: Read and execute commands from BUILD file
+        sys.stderr.write(f'Created image {mycid} from {parent_id}\n')
 
-        with open(myosrelease, 'a') as f:
-            f.write('BUILD_ID="' + mycid + '"\n')
+        # Prepare to send to stream
+        btrfs_do(myvolume, 'property', 'set', 'ro', 'true')
+
+
 
     except OSError as e:
         print(str(e))
+
+
+def osrelease(cid, update=False):
+    '''
+    This updates /etc/os-release within the container
+
+    :param arg:
+    :return:
+    '''
+
+    subvol = 'build/' + cid
+    myosrelease = subvol +'/etc/os-release'
+
+    if update:
+        for line in fileinput.input([myosrelease], inplace=True):
+            print(line.replace('BUILD_ID', 'PARENT_ID'), end='')
+
+    else:
+        with open(myosrelease, 'a') as f:
+            f.write('BUILD_ID="' + cid + '"\n')
 
 
 def die(message):
