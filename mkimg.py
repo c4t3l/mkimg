@@ -11,6 +11,7 @@ import time
 import fileinput
 from pathlib import Path
 from distutils.dir_util import copy_tree
+from dotenv import load_dotenv
 
 MKIMG_COMMANDS = ('init', 'info', 'build', 'clean', 'destroy', 'summary', 'compose')
 __version__ = '2019.1'
@@ -263,9 +264,9 @@ def init():
                 OutputDirectory=buildroot
 
                 [Packages]
-                Packages=yum
-                         systemd
-                         yum-utils
+                Packages=systemd
+                         systemd-networkd
+                         systemd-resolved
                          passwd
                 '''
 
@@ -345,25 +346,40 @@ def btrfs_do(volume, command='subvol', action='create', *args):
     return butter
 
 
-def compress_subvol(subvol, dest):
+def compress_subvol(subvol, dest, *args, diff=False):
     '''
     This compresses the subvol into a zstd sendstreamm at dest
 
-    :param subvol:
+    :param subvol: The subvol to send to compression
+    :param dest: The destination sendstream file
+    :param diff: If passed, the function sends a parent/child diff snapshot
     :return None:
 
     '''
 
     try:
-        proc_send = subprocess.Popen(['btrfs', 'send', subvol],
-                                     stdout=subprocess.PIPE, shell=False
-                                     )
-        proc_stream = subprocess.Popen(['zstd', '-v', '-o', dest],
-                                       stdin=proc_send.stdout, stdout=subprocess.PIPE, shell=False
-                                       )
-        proc_send.stdout.close()
-        proc_stream.communicate()[0]
-        set_ownership(dest)
+        if diff:
+            proc_send = subprocess.Popen(['btrfs', 'send', '-p', subvol, *args],
+                                         stdout=subprocess.PIPE, shell=False
+                                         )
+            proc_stream = subprocess.Popen(['zstd', '-v', '-o', dest],
+                                           stdin=proc_send.stdout, stdout=subprocess.PIPE, shell=False
+                                           )
+            proc_send.stdout.close()
+            proc_stream.communicate()[0]
+            set_ownership(dest)
+
+        else:
+            proc_send = subprocess.Popen(['btrfs', 'send', subvol],
+                                         stdout=subprocess.PIPE, shell=False
+                                         )
+            proc_stream = subprocess.Popen(['zstd', '-v', '-o', dest],
+                                           stdin=proc_send.stdout, stdout=subprocess.PIPE, shell=False
+                                           )
+            proc_send.stdout.close()
+            proc_stream.communicate()[0]
+            set_ownership(dest)
+
     except OSError as e:
         print(str(e))
         die('Error in subvolume compress')
@@ -440,10 +456,13 @@ def compose():
     '''
     try:
         prefix = 'build/'
-        parent_id = '57136fb8e1c02d0da9ae2b441ec4aa80'
+        parent_id = '4dba20d06f8df429318b059217c286d0'
         parent_volume = prefix + parent_id
         mycid = gen_cid()
         myvolume = prefix + mycid
+        dest_prefix = 'streams/'
+        dest_suffix = '.sendstream.zst'
+        dest_file = dest_prefix + mycid + dest_suffix
 
         # Generate snapshot from parent
         btrfs_do(parent_volume, 'subvolume', 'snapshot', myvolume)
@@ -457,31 +476,64 @@ def compose():
 
         # Prepare to send to stream
         btrfs_do(myvolume, 'property', 'set', 'ro', 'true')
+        osrfile = osrelease(mycid, mode='read')
 
+
+        # Compress the diff
+        compress_subvol(parent_volume, dest_file, myvolume, diff=True)
 
 
     except OSError as e:
         print(str(e))
 
 
-def osrelease(cid, update=False):
+def osrelease(cid, mode='write', update=False):
     '''
     This updates /etc/os-release within the container
 
-    :param arg:
+    :param cid:
+    :param mode:
+    :param update:
     :return:
+
+    import os
+    from os.path import join, dirname
+    from dotenv import load_dotenv
+
+    dotenv_path = join(dirname(__file__), '.env')
+    load_dotenv(dotenv_path)
+
+    # Accessing variables.
+    status = os.getenv('STATUS')
+    secret_key = os.getenv('SECRET_KEY')
+
+    # Using variables.
+    print(status)
+    print(secret_key)
+
+
     '''
 
     subvol = 'build/' + cid
     myosrelease = subvol +'/etc/os-release'
 
-    if update:
-        for line in fileinput.input([myosrelease], inplace=True):
-            print(line.replace('BUILD_ID', 'PARENT_ID'), end='')
+    if mode == 'write':
+        if update:
+            for line in fileinput.input([myosrelease], inplace=True):
+                print(line.replace('NSPAWN_BUILD_ID', 'NSPAWN_PARENT_ID'), end='')
 
-    else:
-        with open(myosrelease, 'a') as f:
-            f.write('BUILD_ID="' + cid + '"\n')
+        else:
+            with open(myosrelease, 'a') as f:
+                f.write('NSPAWN_BUILD_ID="' + cid + '"\n')
+
+    elif mode == 'read':
+        load_dotenv(myosrelease)
+        parent_id = os.getenv('NSPAWN_PARENT_ID')
+        build_id = os.getenv('NSPAWN_BUILD_ID')
+
+        return (parent_id, build_id)
+
+
 
 
 def die(message):
