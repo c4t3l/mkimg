@@ -65,7 +65,7 @@ def check_binaries():
         except shutil.Error:
             die('Error in binary search')
 
-    return (returns, status)
+    return returns, status
 
 
 def check_init():
@@ -299,10 +299,14 @@ def info():
     preflight_checks()
 
     sys.stderr.write('PROJECT LISTING:\n')
-    for directory in mydirs:
-        mydir = os.listdir(directory)
-        for item in mydir:
-            sys.stderr.write('          ' + directory + '/' + item + '\n')
+
+    try:
+        for directory in mydirs:
+            mydir = os.listdir(directory)
+            for item in mydir:
+                sys.stderr.write('          ' + directory + '/' + item + '\n')
+    except OSError:
+        die('Project is not initialized.')
 
 
 def summary():
