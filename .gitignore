@@ -1,0 +1,11 @@
+**.idea/
+**.init.lock
+**Dockerfile
+**Nspawnfile
+**build/
+**mkosi.cache/
+**mkosi.default
+**mkosi.rootpw
+**newtmp/
+**streams/
+**tmp/
