@@ -445,7 +445,7 @@ def build():
 
 
 @timeit
-def compose():
+def compose(parent):
     '''
     Create sendstream diffs from a parent subvol.
 

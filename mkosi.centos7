@@ -1,0 +1,16 @@
+[Distribution]
+Distribution=centos
+Release=7
+
+[Output]
+Format=raw_gpt
+OutputDirectory=buildroot
+Output=centos7
+
+[Packages]
+Packages=systemd
+         systemd-networkd
+         systemd-resolved
+         passwd
+		 yum
+		 yum-utils
